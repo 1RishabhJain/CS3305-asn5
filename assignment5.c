@@ -173,7 +173,7 @@ int main() {
     char modLine[256];
 
     // File "assignment_5_input.txt" opened in read mode
-    FILE *file = fopen("/Users/rishabhjain/Documents/GitHub/asn5/assignment_5_input.txt", "r");
+    FILE *file = fopen("assignment_5_input.txt", "r");
 
     // Check if the file pointer is NULL
     if (file == NULL) {
