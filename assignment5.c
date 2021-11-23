@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include<pthread.h>
+#include <stdbool.h>
 
 /*
  * CS3305A - Assignment 5
@@ -20,7 +21,7 @@ int clientCount = 0;
 char delim[] = " ";
 
 // Array to hold client line values
-char clientValues[10][100];
+char clientValues[30][100];
 
 Account *head;
 Account *accountPrevious = NULL;
@@ -40,28 +41,21 @@ struct Accounts {
     Account *next;
 };
 
-typedef struct Clients {
+// Using struct to hold account information
+struct Clients {
     char clientName[10];
     char actions[256];
-    int lineComplete;
+    bool lineComplete;
     Client *next;
-} Clients;
+};
 
-
+// Thread for transaction
 void *transaction(void *thread_id) {
-
     pthread_mutex_lock(&lock);  // ENTRY
-    long int *temp = (long int *) thread_id;
-    long int thread_name = *temp;
-    int transactionComplete = 0;
-    sprintf(output, "\n\n****thread ID %ld****", thread_name);
-    puts(output);
-
+    bool transactionComplete = false;
     Client *clientTemp = clientHead;
-    while (clientTemp != NULL && transactionComplete == 0) {
-        if (clientTemp->lineComplete == 0) {
-            sprintf(output, "%s", clientTemp->actions);
-            puts(output);
+    while (clientTemp != NULL && !transactionComplete) {
+        if (!(clientTemp->lineComplete)) {
             int action;
             char *ptr = strtok(clientTemp->actions, delim);
             ptr = strtok(NULL, delim);
@@ -89,8 +83,6 @@ void *transaction(void *thread_id) {
                     }
                 }
 
-                sprintf(output, "Starting Balance %s %d", ptr, balance);
-                puts(output);
                 ptr = strtok(NULL, delim);
                 ptr[strcspn(ptr, "\r\n")] = 0;
                 int value = atoi(ptr);
@@ -102,24 +94,20 @@ void *transaction(void *thread_id) {
                     balance = balance - value;
                     aTemp->balance = balance;
                 }
-                sprintf(output, "Ending Balance %s %d\n", aTemp->accountName, balance);
-                puts(output);
-
                 // Next value in the line
                 ptr = strtok(NULL, delim);
             }
-
-            clientTemp->lineComplete = 1;
-            transactionComplete = 1;
+            clientTemp->lineComplete = true;
+            transactionComplete = true;
         }
         clientTemp = clientTemp->next;
     }
     pthread_mutex_unlock(&lock); // EXIT
 }
 
+// Function to print the account balances
 void printList() {
     Account *temp = head;
-
     while (temp != NULL) {
         sprintf(output,"%s b %d", temp->accountName, temp->balance);
         puts(output);
@@ -128,7 +116,7 @@ void printList() {
 }
 
 char accountArray[3][15];
-int count = 0;
+int count;
 
 Account *createAccount(char *line) {
     count = 0;
@@ -141,7 +129,6 @@ Account *createAccount(char *line) {
         count++;
     }
     Account *account = malloc(sizeof(Account));
-    //account->accountID = i;
     strcpy(account->accountName, accountArray[0]);
     if (strncmp(accountArray[1], "b", 1) == 0) {
         account->balance = atoi(accountArray[2]);
@@ -160,14 +147,13 @@ Account *createAccount(char *line) {
 
 Client *createClient(char *line) {
     Client *client = malloc(sizeof(Client));
-    //account->accountID = i;
     // Copy line into the actions
     strcpy(client->actions, line);
     char *ptr = strtok(line, delim);
     ptr[strcspn(ptr, "\r\n")] = 0;
     strcpy(client->clientName, ptr);
     // Line complete 0 means the transaction has not been complete
-    client->lineComplete = 0;
+    client->lineComplete = false;
     // No previous, then it is the first account. Set that to head
     if (!clientPrevious) {
         clientHead = client;
@@ -214,11 +200,6 @@ int main() {
         lineCount++;
     }
 
-
-
-    // Number of clients will be total lines minus the number of bank accounts
-    int accountCount = lineCount - clientCount;
-
     // Threads
     int i, err_thread;
 
@@ -242,6 +223,7 @@ int main() {
 
     pthread_mutex_destroy(&lock);
 
+    // Calls function to print each account balance
     printList();
 
     return 0;
