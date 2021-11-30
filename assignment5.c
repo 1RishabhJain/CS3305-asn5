@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include<pthread.h>
-#include <stdbool.h>
 
 /*
  * CS3305A - Assignment 5
@@ -10,29 +9,17 @@
  * Rishabh Jain
  */
 
-
 void *transaction(void *thread_id);
 
 typedef struct Accounts Account;
 typedef struct Clients Client;
 pthread_mutex_t lock;
 
-int clientCount = 0;
-char delim[] = " ";
-
-// Array to hold client line values
-char clientValues[30][100];
-
 Account *head;
 Account *accountPrevious = NULL;
 
 Client *clientHead;
 Client *clientPrevious = NULL;
-
-int balance = 0;
-
-// Array for output using sprintf
-char output[256];
 
 // Using struct to hold account information
 struct Accounts {
@@ -45,68 +32,74 @@ struct Accounts {
 struct Clients {
     char clientName[10];
     char actions[256];
-    bool lineComplete;
+    long int threadID;
     Client *next;
 };
 
 // Thread for transaction
 void *transaction(void *thread_id) {
-    pthread_mutex_lock(&lock);  // ENTRY
-    bool transactionComplete = false;
+    char *saveptr;
+    long int thread_name = *((long int *) thread_id);
     Client *clientTemp = clientHead;
-    while (clientTemp != NULL && !transactionComplete) {
-        if (!(clientTemp->lineComplete)) {
-            int action;
-            char *ptr = strtok(clientTemp->actions, delim);
-            ptr = strtok(NULL, delim);
-            while (ptr != NULL) {
-                ptr[strcspn(ptr, "\r\n")] = 0;
-                // If action is deposit (d)
-                if (strcmp(ptr, "d") == 0) {
-                    action = 1;
-                }
-                    // If action is withdrawal (w)
-                else if (strcmp(ptr, "w") == 0) {
-                    action = 0;
-                }
-                ptr = strtok(NULL, delim);
-                ptr[strcspn(ptr, "\r\n")] = 0;
-
-                // Finds the balance of the account to be changed
-                Account *aTemp = head;
-                while (aTemp != NULL) {
-                    if (strcmp(aTemp->accountName, ptr) == 0) {
-                        balance = aTemp->balance;
-                        break;
-                    } else {
-                        aTemp = aTemp->next;
-                    }
-                }
-
-                ptr = strtok(NULL, delim);
-                ptr[strcspn(ptr, "\r\n")] = 0;
-                int value = atoi(ptr);
-                if (action == 1) {
-                    balance = balance + value;
-                    aTemp->balance = balance;
-                }
-                else if (action == 0 && balance >= value) {
-                    balance = balance - value;
-                    aTemp->balance = balance;
-                }
-                // Next value in the line
-                ptr = strtok(NULL, delim);
-            }
-            clientTemp->lineComplete = true;
-            transactionComplete = true;
+    while (clientTemp != NULL) {
+        if (clientTemp->threadID == thread_name) {
+            break;
         }
-        clientTemp = clientTemp->next;
+        else {
+            clientTemp = clientTemp->next;
+        }
     }
-    pthread_mutex_unlock(&lock); // EXIT
+    int action;
+    // First is the client name
+    char *ptr = strtok_r(clientTemp->actions, " ", &saveptr);
+    // Action (d or w)
+    ptr = strtok_r(NULL, " ", &saveptr);
+    while (ptr != NULL) {
+        ptr[strcspn(ptr, "\r\n")] = 0;
+        // If action is deposit (d)
+        if (strcmp(ptr, "d") == 0) {
+            action = 1;
+        }
+            // If action is withdrawal (w)
+        else if (strcmp(ptr, "w") == 0) {
+            action = 0;
+        }
+        // Account name
+        ptr = strtok_r(NULL, " ", &saveptr);
+        ptr[strcspn(ptr, "\r\n")] = 0;
+        // Finds the balance of the account to be changed
+        Account *accountTemp = head;
+        while (accountTemp != NULL) {
+            if (strcmp(accountTemp->accountName, ptr) == 0) {
+                break;
+            }
+            else {
+                accountTemp = accountTemp->next;
+            }
+        }
+        // Transaction amount
+        ptr = strtok_r(NULL, " ", &saveptr);
+        ptr[strcspn(ptr, "\r\n")] = 0;
+        int amount = atoi(ptr);
+        // ENTRY
+        pthread_mutex_lock(&lock);
+        if (action == 1) {
+            accountTemp->balance = accountTemp->balance + amount;
+        }
+        else if (action == 0 && accountTemp->balance >= amount) {
+            accountTemp->balance = accountTemp->balance - amount;
+        }
+        // EXIT
+        pthread_mutex_unlock(&lock);
+        // Next Action
+        ptr = strtok_r(NULL, " ", &saveptr);
+    }
 }
 
 // Function to print the account balances
 void printList() {
+    // Array for output using sprintf
+    char output[256];
     Account *temp = head;
     while (temp != NULL) {
         sprintf(output,"%s b %d", temp->accountName, temp->balance);
@@ -115,17 +108,15 @@ void printList() {
     }
 }
 
-char accountArray[3][15];
-int count;
-
 Account *createAccount(char *line) {
-    count = 0;
+    char accountArray[3][15];
+    int count = 0;
     // Splitting line around " " until NULL
-    char *ptr = strtok(line, delim);
+    char *ptr = strtok(line, " ");
     while (ptr != NULL) {
         ptr[strcspn(ptr, "\r\n")] = 0;
         strcpy(&accountArray[count][0], ptr);
-        ptr = strtok(NULL, delim);
+        ptr = strtok(NULL, " ");
         count++;
     }
     Account *account = malloc(sizeof(Account));
@@ -147,13 +138,12 @@ Account *createAccount(char *line) {
 
 Client *createClient(char *line) {
     Client *client = malloc(sizeof(Client));
+
     // Copy line into the actions
     strcpy(client->actions, line);
-    char *ptr = strtok(line, delim);
+    char *ptr = strtok(line, " ");
     ptr[strcspn(ptr, "\r\n")] = 0;
     strcpy(client->clientName, ptr);
-    // Line complete 0 means the transaction has not been complete
-    client->lineComplete = false;
     // No previous, then it is the first account. Set that to head
     if (!clientPrevious) {
         clientHead = client;
@@ -167,10 +157,18 @@ Client *createClient(char *line) {
 }
 
 int main() {
-
     // array to store original file line and the one which will be modified
     char fileLine[256];
     char modLine[256];
+
+    // Array for output using sprintf
+    char output[256];
+
+    // Array to hold client line values
+    char clientValues[30][100];
+
+    // Total number of clients
+    int clientCount = 0;
 
     // File "assignment_5_input.txt" opened in read mode
     FILE *file = fopen("assignment_5_input.txt", "r");
@@ -182,13 +180,14 @@ int main() {
         exit(1);
     }
 
-    //int accountCount = 0;
+    // Total number of lines
     int lineCount = 0;
+
     // Continue to read lines until no more lines are left
-    while (fgets(fileLine, sizeof(fileLine), file)) {
+    while (fgets(fileLine, 256, file)) {
         strcpy(modLine, fileLine);
         // Continue splitting line around " " until NULL
-        char *ptr = strtok(modLine, delim);
+        char *ptr = strtok(modLine, " ");
         // If first letter is a then it is bank account
         if (*ptr == 'a') {
             createAccount(fileLine);
@@ -202,7 +201,6 @@ int main() {
 
     // Threads
     int i, err_thread;
-
     pthread_t threads[clientCount];
 
     if (pthread_mutex_init(&lock, NULL) != 0) {
@@ -210,11 +208,16 @@ int main() {
         return 1;
     }
 
+    Client *clientTemp = clientHead;
     for (i = 0; i < clientCount; i++) {
         err_thread = pthread_create(&threads[i], NULL, &transaction, &threads[i]);
-
         if (err_thread != 0)
             printf("\n Error creating thread %d", i);
+        else {
+            long int threadID = *((long int *) &threads[i]);
+            clientTemp->threadID = threadID;
+        }
+        clientTemp = clientTemp->next;
     }
 
     for (i = 0; i < clientCount; i++) {
